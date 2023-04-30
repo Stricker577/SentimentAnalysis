@@ -19,10 +19,11 @@ const twitteraccess = new twitter({
     access_token_secret: process.env.twitteracesstokensecret
 });
 
+//This is used to allow our searchQuery to take the brand name that is provided.
 router.use(bodyParser.urlencoded({ extended: true }));
 
 router.get('/', (req, res) => {
-    res.render('index', {brandName: '', sentimentResult: '', tweets: []});
+    res.render('index', {brandName: '', sentimentType: '', sentimentResult: '', tweets: []});
 });
 
 router.post('/', (req, res, next) => {
@@ -30,7 +31,7 @@ router.post('/', (req, res, next) => {
     const brandName = req.body.brand;
     const searchQuery = `${brandName} -filter:retweets -filter:replies`;
 
-    //look at the last 10 tweets that were created as our search data
+    //look at the last 10 tweets that were created as our search data. We are limited to only 10 tweets at a time.
     const tweetData = {
         q: searchQuery,
         lang: "en",
@@ -38,22 +39,33 @@ router.post('/', (req, res, next) => {
         count: 10
     };
 
+    //use our twitter access key to search tweets based on the query we provided.
     twitteraccess.get('search/tweets', tweetData)
+
+    //once we have obtained access, start to interpret the data we have recieved
     .then(async tweets => {
+
+        //This line creates an array of the tweets that were given to us by our data 
         const tweetItems = tweets.statuses.map(status => status.text);
 
+        //This starts a new fetch request to Azure services with our tweets as the data. 
         const response = await fetch(endpoint, {
             method: "POST",
             body: JSON.stringify({
-                documents: tweetItems.map((text, index) => ({ id: String(index), language: "en", text })),
+                //send our tweet array to azure in order to get back our analysis
+                documents: tweetItems.map((text, index) => ({id: String(index), language: "en", text})),
             }),
+            //add our subsciption key to gain access to perform this action
             headers: {
                 "Content-Type": "application/json",
                 "Ocp-Apim-Subscription-Key": accessKey
             }
         });
+        //based on the response from above, this will be our sentiment analysis. We can then perform the equation following to gain the average sentiment based on all of the responses.
         const sentimentData = await response.json();
         const averageSentiment = sentimentData.documents.reduce((total, current) => total + current.confidenceScores.positive, 0) / sentimentData.documents.length;
+
+        //once we have gathered our results based on the sentiment score, parse this to display a positive neutral or negative response.
         let sentimentResult = '';
         if (averageSentiment > 0.66) {
             sentimentResult = 'Positive';
@@ -62,11 +74,13 @@ router.post('/', (req, res, next) => {
         } else {
             sentimentResult = 'Neutral';
         }
-        res.render('index', {brandName: brandName, sentimentResult: averageSentiment, tweets: tweetItems});
+
+        //send brand name averagesentiment and tweetItems to index so it can display the most recent tweets and the overall brands sentiment
+        res.render('index', {brandName: brandName, sentimentType: sentimentResult, sentimentResult: averageSentiment, tweets: tweetItems});
     })
     //if there is an error, keep moving on.
     .catch(err=>next(err));  
 });
 
-
+//export our model to app.js
 module.exports = router;
