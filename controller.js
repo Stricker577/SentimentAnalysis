@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const twitter = require('twitter-lite');
 const bodyParser = require('body-parser');
+const axios = require('axios');
 
 //this uses dotenv to hide the keys on my local machine so that they are not revealed publically 
 const dotenv = require('dotenv').config();
@@ -26,7 +27,7 @@ router.get('/', (req, res) => {
     res.render('index', {brandName: '', sentimentType: '', sentimentResult: '', tweets: []});
 });
 
-router.post('/', (req, res, next) => {
+router.post('/', async (req, res, next) => {
     //create the search query for the user. Also remove retweets and replies from the result
     const brandName = req.body.brand;
     const searchQuery = `${brandName} -filter:retweets -filter:replies`;
@@ -39,30 +40,29 @@ router.post('/', (req, res, next) => {
         count: 10
     };
 
-    //use our twitter access key to search tweets based on the query we provided.
-    twitteraccess.get('search/tweets', tweetData)
-
-    //once we have obtained access, start to interpret the data we have recieved
-    .then(async tweets => {
+    try {
+        //use our twitter access key to search tweets based on the query we provided.
+        const tweets = await twitteraccess.get('search/tweets', tweetData);
 
         //This line creates an array of the tweets that were given to us by our data 
         const tweetItems = tweets.statuses.map(status => status.text);
 
-        //This starts a new fetch request to Azure services with our tweets as the data. 
-        const response = await fetch(endpoint, {
-            method: "POST",
-            body: JSON.stringify({
-                //send our tweet array to azure in order to get back our analysis
-                documents: tweetItems.map((text, index) => ({id: String(index), language: "en", text})),
-            }),
+        //This line creates an array of the tweets that were given to us by our data 
+        const documentData = {
+            documents: tweetItems.map((text, index) => ({id: String(index), language: "en", text})),
+        };
+
+        //send our tweet array to azure in order to get back our analysis
+        const response = await axios.post(endpoint, documentData, {
             //add our subsciption key to gain access to perform this action
             headers: {
                 "Content-Type": "application/json",
                 "Ocp-Apim-Subscription-Key": accessKey
             }
         });
+
         //based on the response from above, this will be our sentiment analysis. We can then perform the equation following to gain the average sentiment based on all of the responses.
-        const sentimentData = await response.json();
+        const sentimentData = response.data;
         const averageSentiment = sentimentData.documents.reduce((total, current) => total + current.confidenceScores.positive, 0) / sentimentData.documents.length;
 
         //once we have gathered our results based on the sentiment score, parse this to display a positive neutral or negative response.
@@ -77,10 +77,12 @@ router.post('/', (req, res, next) => {
 
         //send brand name averagesentiment and tweetItems to index so it can display the most recent tweets and the overall brands sentiment
         res.render('index', {brandName: brandName, sentimentType: sentimentResult, sentimentResult: averageSentiment, tweets: tweetItems});
-    })
-    //if there is an error, keep moving on.
-    .catch(err=>next(err));  
+    } catch (err) {
+        //if there is an error, keep moving on.
+        next(err);
+    }
 });
+
 
 //export our model to app.js
 module.exports = router;
