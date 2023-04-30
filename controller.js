@@ -1,7 +1,7 @@
 //configure requirements 
 const express = require('express');
 const router = express.Router();
-const twitter = require('twitter');
+const twitter = require('twitter-lite');
 const bodyParser = require('body-parser');
 
 //this uses dotenv to hide the keys on my local machine so that they are not revealed publically 
@@ -19,47 +19,54 @@ const twitteraccess = new twitter({
     access_token_secret: process.env.twitteracesstokensecret
 });
 
-//create the search query for the user
-const text = "example"; 
-const searchQuery = `${text} -filter:retweets -filter:replies`; 
-
 router.use(bodyParser.urlencoded({ extended: true }));
 
 router.get('/', (req, res) => {
-    res.render('index', { brandName: '', sentimentResult: '' });
+    res.render('index', {brandName: '', sentimentResult: '', tweets: []});
 });
 
 router.post('/', (req, res, next) => {
+    //create the search query for the user. Also remove retweets and replies from the result
     const brandName = req.body.brand;
     const searchQuery = `${brandName} -filter:retweets -filter:replies`;
 
-    //This fetch is designed to make a post request to the analysis API 
-    fetch(endpoint, {
-        method: "POST",
-        body: JSON.stringify({
-            documents: [
-                {
-                    id: "1",
-                    language: "en",
-                    text: text
-                }
-            ]
-        }),
-        headers: {
-            "Content-Type": "application/json",
-            "Ocp-Apim-Subscription-Key": accessKey
+    //look at the last 10 tweets that were created as our search data
+    const tweetData = {
+        q: searchQuery,
+        lang: "en",
+        result_type: "recent",
+        count: 10
+    };
+
+    twitteraccess.get('search/tweets', tweetData)
+    .then(async tweets => {
+        const tweetItems = tweets.statuses.map(status => status.text);
+
+        const response = await fetch(endpoint, {
+            method: "POST",
+            body: JSON.stringify({
+                documents: tweetItems.map((text, index) => ({ id: String(index), language: "en", text })),
+            }),
+            headers: {
+                "Content-Type": "application/json",
+                "Ocp-Apim-Subscription-Key": accessKey
+            }
+        });
+        const sentimentData = await response.json();
+        const averageSentiment = sentimentData.documents.reduce((total, current) => total + current.confidenceScores.positive, 0) / sentimentData.documents.length;
+        let sentimentResult = '';
+        if (averageSentiment > 0.66) {
+            sentimentResult = 'Positive';
+        } else if (averageSentiment < 0.33) {
+            sentimentResult = 'Negative';
+        } else {
+            sentimentResult = 'Neutral';
         }
-    })
-    //take the dataset and convert it to a json
-    .then(response => response.json())
-    //based on the response, take the sentiment score of the dataset
-    .then(data => {
-        const sentimentScore = data.documents[0].sentiment;
-        //res.send(`Sentiment score for "${text}": ${sentimentScore}`);
-        res.render('index', { brandName: brandName, sentimentResult: sentimentScore });
+        res.render('index', {brandName: brandName, sentimentResult: averageSentiment, tweets: tweetItems});
     })
     //if there is an error, keep moving on.
-    .catch(err=>next(err));    
+    .catch(err=>next(err));  
 });
+
 
 module.exports = router;

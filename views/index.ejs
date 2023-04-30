@@ -13,6 +13,14 @@
             <input class="submit" type="submit" value="Submit">
         </form>
 
-        <p>The Result of the brand <%=brandName%> is <%=sentimentResult%></p>
+        <p>The Result of the brand <%=brandName%> according to twitter is <%=sentimentResult%>!</p>
+        <ul>
+            <%if(typeof tweets !== 'undefined'){%>
+            10 Most recent tweets on this Brand:
+                <%tweets.forEach((tweet) => {%>
+                    <li><%= tweet%></li>
+                <%}); %>
+            <%}%>
+        </ul>        
     </body>
 </html>
