@@ -23,10 +23,38 @@ const twitteraccess = new twitter({
 //This is used to allow our searchQuery to take the brand name that is provided.
 router.use(bodyParser.urlencoded({ extended: true }));
 
+/**
+ * @swagger
+ * /:
+ *    get:
+ *      description: Return the home page.
+ *      responses:
+ *          200:
+ *              description: Home page has been rendered.
+ *          404:
+ *              description: Error      
+ */
 router.get('/', (req, res) => {
     res.render('index', {brandName: '', sentimentType: '', sentimentResult: '', tweets: []});
 });
 
+/**
+ * @swagger
+ * /:
+ *    post:
+ *      description: Performs sentiment analysis on twitter tweets
+ *      parameters:
+ *          - name: brandName
+ *            in: query
+ *            description: Name of Brand you want to look up on twitter.
+ *            schema:
+ *              type: string
+ *      responses:
+ *          200:
+ *              description: sentiment analysis successfully ran.
+ *          404:
+ *              description: Error
+ */
 router.post('/', async (req, res, next) => {
     //create the search query for the user. Also remove retweets and replies from the result
     const brandName = req.body.brand;
@@ -76,13 +104,13 @@ router.post('/', async (req, res, next) => {
         }
 
         //send brand name averagesentiment and tweetItems to index so it can display the most recent tweets and the overall brands sentiment
-        res.render('index', {brandName: brandName, sentimentType: sentimentResult, sentimentResult: averageSentiment, tweets: tweetItems});
+        res.status(200).render('index', {brandName: brandName, sentimentType: sentimentResult, sentimentResult: averageSentiment, tweets: tweetItems});
     } catch (err) {
         //if there is an error, keep moving on.
+        res.status(404).json('Error: ' + err.message);
         next(err);
     }
 });
-
 
 //export our model to app.js
 module.exports = router;
